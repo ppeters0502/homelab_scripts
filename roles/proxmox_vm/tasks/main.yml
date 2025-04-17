@@ -1,0 +1,26 @@
+---
+- name: Create new VM on Proxmox
+  community.general.proxmox_kvm:
+    api_user: "{{ proxmox_user }}"
+    api_password: "{{ proxmox_password }}"
+    api_host: "{{ proxmox_host }}"
+    node: "{{ proxmox_node }}"
+    vmid: "{{ proxmox_vmid }}"
+    name: "{{ proxmox_vm_name }}"
+    cores: 2
+    memory: 2048
+    net:
+      - model: virtio
+        bridge: vmbr0
+    scsihw: virtio-scsi-pci
+    ostype: l26
+    ide2: "{{ proxmox_storage }}:cloudinit"
+    sata0: "{{ proxmox_storage }}:10"
+    ciuser: "{{ new_user }}"
+    cipassword: "{{ proxmox_vm_password }}"
+    citype: nocloud
+    boot: c
+    bootdisk: sata0
+    pool: "{{ proxmox_pool | default(omit) }}"
+    state: present
+    timeout: 300

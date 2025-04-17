@@ -1,0 +1,27 @@
+---
+- name: Install Python3 and pip
+  apt:
+    name:
+      - python3
+      - python3-pip
+    state: present
+
+- name: Install pipx
+  pip:
+    name: pipx
+    executable: pip3
+
+- name: Ensure pipx binary path is in the system PATH
+  lineinfile:
+    path: /etc/profile
+    line: 'export PATH=$PATH:/root/.local/bin'
+    create: yes
+    state: present
+
+- name: Install exegol via pipx
+  become_user: "{{ new_user }}"
+  shell: |
+    export PATH=$PATH:/home/{{ new_user }}/.local/bin
+    pipx install exegol
+  args:
+    executable: /bin/bash

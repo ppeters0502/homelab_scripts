@@ -1,0 +1,27 @@
+---
+- name: Generate SSH key pair locally if it doesn't exist
+  delegate_to: localhost
+  run_once: true
+  openssh_keypair:
+    path: "./keys/pat_ubuntu_key"
+    type: rsa
+    size: 4096
+    mode: '0600'
+    force: false
+  register: local_ssh_key
+
+- name: Ensure .ssh directory exists for remote user
+  file:
+    path: "/home/{{ new_user }}/.ssh"
+    state: directory
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0700"
+
+- name: Copy public key to remote authorized_keys
+  copy:
+    src: "./keys/pat_ubuntu_key.pub"
+    dest: "/home/{{ new_user }}/.ssh/authorized_keys"
+    owner: "{{ new_user }}"
+    group: "{{ new_user }}"
+    mode: "0600"

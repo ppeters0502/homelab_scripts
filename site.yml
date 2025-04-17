@@ -1,0 +1,21 @@
+---
+- name: Configure Ubuntu for pentesting
+  hosts: all
+  become: yes
+  vars:
+    new_user: "pat_ubuntu"
+    ssh_key_path: "/home/{{ new_user }}/.ssh/id_rsa"
+
+  roles:
+    - common
+    - user
+    - ssh
+    - docker
+    - exegol
+    - common
+    - user
+    - ssh
+    - docker
+    - exegol
+    - secure_ssh
+    - proxmox_vm

@@ -1,0 +1,32 @@
+---
+- name: Install OpenSSH server
+  apt:
+    name: openssh-server
+    state: present
+
+- name: Ensure SSH service is enabled and started
+  service:
+    name: ssh
+    state: started
+    enabled: yes
+
+- name: Disable password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    state: present
+    backrefs: yes
+
+- name: Ensure PubkeyAuthentication is yes
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PubkeyAuthentication'
+    line: 'PubkeyAuthentication yes'
+    state: present
+    backrefs: yes
+
+- name: Restart SSH
+  service:
+    name: ssh
+    state: restarted
