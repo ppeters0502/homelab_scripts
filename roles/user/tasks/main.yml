@@ -14,17 +14,3 @@
     mode: '0700'
     owner: "{{ new_user }}"
     group: "{{ new_user }}"
-
-- name: Generate SSH key pair for the new user
-  openssh_keypair:
-    path: "{{ ssh_key_path }}"
-    type: rsa
-    size: 4096
-    owner: "{{ new_user }}"
-    group: "{{ new_user }}"
-    mode: '0600'
-  register: ssh_keygen_result
-
-- name: Print private key to console
-  debug:
-    msg: "{{ ssh_keygen_result.private_key }}"

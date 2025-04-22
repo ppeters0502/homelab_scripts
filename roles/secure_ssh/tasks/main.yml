@@ -18,6 +18,14 @@
     group: "{{ new_user }}"
     mode: "0700"
 
+- name: Change permissions on pub key
+  delegate_to: localhost
+  become: yes
+  shell: |
+    chmod 644 ./keys/pat_ubuntu_key.pub
+  args:
+    executable: /bin/bash
+
 - name: Copy public key to remote authorized_keys
   copy:
     src: "./keys/pat_ubuntu_key.pub"

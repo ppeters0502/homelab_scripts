@@ -12,10 +12,7 @@
     - ssh
     - docker
     - exegol
-    - common
-    - user
-    - ssh
-    - docker
-    - exegol
     - secure_ssh
     - proxmox_vm
+
+    
