@@ -1,0 +1,83 @@
+---
+- name: Create Alpine LXC container for Homer
+  community.general.proxmox:
+    api_host: "{{ ansible_host}}"
+    api_user: "{{ proxmox_api_user }}"
+    api_password: "{{ proxmox_api_password }}"
+    node: "{{ node }}"
+    hostname: "{{ alpine_lxc_hostname }}"
+    ostemplate: "local:vztmpl/alpine-3.23-default_20260116_amd64.tar.xz"
+    password: "{{ alpine_lxc_root_password }}"
+    storage: "{{ storage }}"
+    pubkey: "{{ ssh_pub_key }}"
+    cores: 1
+    memory: 512
+    netif: '{"net0":"name=eth0,ip=dhcp,bridge=vmbr0"}'
+    state: present
+  register: create_results
+
+- name: Set VMID
+  set_fact:
+    vmid: "{{ create_results.vmid}}"
+
+- name: Start container
+  community.general.proxmox:
+    api_host: "{{ ansible_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_password: "{{ proxmox_api_password }}"
+    node: "{{ node }}"
+    vmid: "{{ vmid }}"
+    state: started
+
+- name: Wait for container to get IP
+  shell: "pct exec {{ vmid }} -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1"
+  register: container_ip
+  retries: 10
+  delay: 5
+  until: container_ip.stdout != ""
+
+- name: print out container_ip results
+  debug:
+    var: container_ip
+
+- name: Set container IP fact
+  set_fact:
+    lxc_ip: "{{ container_ip.stdout }}"
+
+- name: Install OpenSSH server, Python, and Unzip in the new LXC
+  shell: "pct exec {{ vmid }} -- apk add openssh-server python3 unzip"
+  args:
+    executable: /bin/sh
+
+- name: Enable sshd at boot
+  shell: "pct exec {{ vmid }} -- rc-update add sshd"
+  args:
+    executable: /bin/sh
+
+- name: Start sshd
+  shell: "pct exec {{ vmid }} -- rc-service sshd start"
+  args:
+    executable: /bin/sh
+
+- name: Wait for SSH to become available on the new LXC
+  wait_for:
+    host: "{{ lxc_ip }}"
+    port: 22
+    delay: 10
+    timeout: 120
+  delegate_to: localhost
+
+- name: Add container SSH key to known_hosts
+  ansible.builtin.shell: |
+    ssh-keyscan -H {{ lxc_ip }} >> ~/.ssh/known_hosts
+  delegate_to: localhost
+
+- name: Add new LXC host to inventory
+  add_host:
+    name: "{{ alpine_lxc_hostname }}"
+    groups: dynamic_lxc
+    ansible_host: "{{ lxc_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+    ansible_python_interpreter: /usr/bin/python
+    vmid: "{{ vmid }}"

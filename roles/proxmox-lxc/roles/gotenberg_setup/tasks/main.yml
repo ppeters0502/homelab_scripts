@@ -1,0 +1,80 @@
+---
+# tasks file for roles/gotenberg_setup
+
+- name: Ensure Gotenberg group exists
+  ansible.builtin.group:
+    name: "{{ gotenberg_group }}"
+    system: true
+  become: true
+
+- name: Ensure Gotenberg user exists
+  ansible.builtin.user:
+    name: "{{ gotenberg_user }}"
+    group: "{{ gotenberg_group }}"
+    shell: /usr/sbin/nologin
+    home: "{{ gotenberg_home }}"
+    create_home: false
+    system: true
+  become: true
+
+- name: Install Docker and required tools
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: true
+  become: true
+
+- name: Ensure Docker is enabled and running
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+  become: true
+
+- name: Ensure Gotenberg directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ gotenberg_user }}"
+    group: "{{ gotenberg_group }}"
+    mode: "0755"
+  loop:
+    - "{{ gotenberg_home }}"
+    - "/etc/gotenberg"
+  become: true
+
+- name: Install Gotenberg systemd unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/gotenberg.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Gotenberg
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Restart=always
+      ExecStart=/usr/bin/docker run --rm \
+        --name gotenberg \
+        --security-opt apparmor=unconfined \
+        -p {{ gotenberg_port }}:3000 \
+        {{ gotenberg_image }}
+
+      ExecStop=/usr/bin/docker stop gotenberg
+
+      [Install]
+      WantedBy=multi-user.target
+  become: true
+  notify: Restart gotenberg
+
+- name: Enable and start Gotenberg
+  ansible.builtin.systemd:
+    name: gotenberg
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true

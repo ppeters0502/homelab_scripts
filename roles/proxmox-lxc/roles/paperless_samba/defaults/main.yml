@@ -1,0 +1,23 @@
+---
+# Required secret (set in [secrets.yml](http://_vscodecontentref_/1))
+paperless_samba_password: ""
+
+# Share identity
+paperless_samba_share_name: "paperless-drop"
+paperless_samba_comment: "Paperless NGX drop share"
+
+# Map Samba share directly to Paperless consumption directory
+paperless_samba_path: "/var/lib/paperless-ngx/consumption"
+
+# Local Unix + Samba auth user
+paperless_samba_user: "paperlessdrop"
+paperless_samba_group: "paperlessngx"
+
+# File and dir behavior for uploaded docs
+paperless_samba_owner: "paperlessngx"
+paperless_samba_create_mask: "0664"
+paperless_samba_directory_mask: "2775"
+
+# Optional SMB scope controls
+paperless_samba_hosts_allow: ""
+paperless_samba_hosts_deny: ""

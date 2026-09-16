@@ -1,0 +1,85 @@
+---
+# tasks file for roles/proxmox_lxc_nodejs
+
+  # Make sure the group vars are loaded
+  - name: print group vars
+    debug:
+      msg: "Group vars: {{ item }}"
+    loop: "{{ lxc_containers }}"
+  
+  - name: Ensure proxmoxer is installed
+    pip:
+      name: proxmoxer
+      state: present
+      extra_args: --break-system-packages
+  
+  # - name: Load SSH public key
+  #   set_fact:
+  #     ssh_pub_key: "{{ lookup('file', ssh_pub_key) }}"
+
+  - name: Create LXC container(s)
+    community.general.proxmox:
+      api_host: "{{ ansible_host }}"
+      api_user: "{{ proxmox_api_user }}"
+      api_password: "{{ proxmox_api_password }}"
+      node: "{{ node }}"
+      hostname: "{{ item }}"
+      ostemplate: "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+      storage: "{{ storage }}"
+      password: "{{ lxc_root_password if lxc_root_password else omit }}"
+      cores: "{{ cores }}"
+      memory: "{{ memory }}"
+      netif: '{"net0":"name=eth0,ip=dhcp,bridge=vmbr0"}'
+      pubkey: "{{ ssh_pub_key }}"
+      unprivileged: true
+      state: present
+    loop: "{{ lxc_containers }}"
+    register: create_results
+
+  - name: Set list of VMIDs
+    set_fact:
+      vmids: "{{ create_results.results | map(attribute='vmid') | list }}"
+
+  - name: Start container
+    community.general.proxmox:
+      api_host: "{{ ansible_host }}"
+      api_user: "{{ proxmox_api_user }}"
+      api_password: "{{ proxmox_api_password }}"
+      node: "proxmox"
+      vmid: "{{ item }}"
+      state: started
+    loop: "{{ vmids }}"
+
+  - name: Wait for container to get IP
+    shell: "pct exec {{ item }} -- hostname -I"
+    loop: "{{ vmids }}"
+    register: container_ip
+    retries: 10
+    delay: 5
+  
+  - name: print out container_ip results
+    debug:
+      var: container_ip.results
+
+  - name: Set container IP fact
+    set_fact:
+      lxc_ip: "{{ container_ip.results | map(attribute='stdout') | map('split') | map('first') | list }}"
+
+  - name: Add new LXC host to inventory
+    add_host:
+      name: "{{ item[2] }}"
+      groups: dynamic_lxc
+      ansible_host: "{{ item[0] }}"
+      ansible_user: root
+      ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+      ansible_python_interpreter: /usr/bin/python3
+      vmid: "{{ item[1] }}"
+    loop: "{{ lxc_ip | zip(vmids) | zip(lxc_containers) | map('flatten') | list }}"
+  
+  - name: Add container SSH key to known_hosts
+    ansible.builtin.shell: |
+      ssh-keyscan -H {{ item }} >> ~/.ssh/known_hosts
+    delegate_to: localhost
+    run_once: false
+    loop: "{{ lxc_ip }}"
+    

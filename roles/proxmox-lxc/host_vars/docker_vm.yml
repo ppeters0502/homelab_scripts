@@ -1,0 +1,4 @@
+# Store VM connection secrets in Ansible Vault and reference them here.
+# Example:
+# ansible_user: "{{ vault_docker_vm_user }}"
+# ansible_password: "{{ vault_docker_vm_password }}"

@@ -1,0 +1,22 @@
+---
+# Where local backup artifacts are stored
+bitwarden_backup_workdir: "/home/pat/backups/bitwarden"
+bitwarden_backup_extra_mb: 10
+
+# Bitwarden export naming
+bitwarden_export_filename: "bitwarden-export.json"
+bitwarden_export_path: "{{ bitwarden_backup_workdir }}/{{ bitwarden_export_filename }}"
+
+# VeraCrypt
+veracrypt_container_basename: "bitwarden-backup"
+veracrypt_container_name: "{{ veracrypt_container_basename }}-{{ bitwarden_backup_timestamp }}.hc"
+veracrypt_container_path: "{{ bitwarden_backup_workdir }}/{{ veracrypt_container_name }}"
+veracrypt_mount_point: "/mnt/bitwarden_vc"
+veracrypt_filesystem: "ext4"
+veracrypt_encryption: "AES"
+veracrypt_hash: "SHA-512"
+
+# OneDrive CLI (abraunegg client style)
+onedrive_sync_dir: "/home/pat/OneDrive"
+onedrive_remote_dir: "backups/bitwarden"
+onedrive_upload_cmd: "onedrive --sync --upload-only --single-directory {{ onedrive_remote_dir }}"

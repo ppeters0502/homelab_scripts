@@ -1,0 +1,8 @@
+---
+lxc_containers:
+  - nodejs-lxc
+  - nodejs-lxc-two
+  - nodejs-lxc-three
+  - nodejs-lxc-four
+
+ssh_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"

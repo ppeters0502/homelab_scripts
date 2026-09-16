@@ -1,0 +1,6 @@
+---
+- name: Restart shiori
+  service:
+    name: "{{ shiori_service_name }}"
+    state: restarted
+  become: true

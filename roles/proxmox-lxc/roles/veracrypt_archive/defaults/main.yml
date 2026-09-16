@@ -1,0 +1,25 @@
+---
+# Required inputs
+veracrypt_password: ""
+input_path: ""
+veracrypt_container_path: ""
+
+# Mount and encryption configuration
+veracrypt_mount_point: "/mnt/veracrypt_archive"
+veracrypt_filesystem: "ext4"
+veracrypt_encryption: "AES"
+veracrypt_hash: "SHA-512"
+
+# Sizing controls
+veracrypt_size_multiplier_numerator: 5
+veracrypt_size_multiplier_denominator: 4
+veracrypt_extra_mb: 10
+veracrypt_min_size_mb: 16
+
+# Resulting container ownership and permissions
+veracrypt_container_owner: "{{ lookup('env', 'USER') }}"
+veracrypt_container_group: "{{ lookup('env', 'USER') }}"
+veracrypt_container_mode: "0600"
+
+# Computed by the role
+veracrypt_size_mb: 0

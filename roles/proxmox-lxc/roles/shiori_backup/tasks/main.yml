@@ -1,0 +1,178 @@
+---
+- name: Validate required inputs
+  ansible.builtin.assert:
+    that:
+      - shiori_lxc_ip is defined
+      - shiori_lxc_ip | length > 0
+      - shiori_lxc_ssh_key is defined
+      - shiori_lxc_ssh_key | length > 0
+      - veracrypt_password is defined
+      - veracrypt_password | length > 0
+    fail_msg: "Missing required variables: shiori_lxc_ip, shiori_lxc_ssh_key, veracrypt_password"
+
+- name: Ensure SSH key exists locally
+  ansible.builtin.stat:
+    path: "{{ shiori_lxc_ssh_key }}"
+  register: shiori_ssh_key_stat
+  delegate_to: localhost
+
+- name: Assert SSH key exists
+  ansible.builtin.assert:
+    that:
+      - shiori_ssh_key_stat.stat.exists
+    fail_msg: "SSH key not found at {{ shiori_lxc_ssh_key }}"
+
+- name: Generate backup timestamp
+  ansible.builtin.set_fact:
+    shiori_backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+- name: Derive container and staging paths from timestamp
+  ansible.builtin.set_fact:
+    veracrypt_container_name: "{{ veracrypt_container_basename }}-{{ shiori_backup_timestamp }}.hc"
+    veracrypt_container_path: "{{ shiori_backup_workdir }}/{{ veracrypt_container_basename }}-{{ shiori_backup_timestamp }}.hc"
+    shiori_backup_staging_dir: "{{ shiori_backup_workdir }}/staging-{{ shiori_backup_timestamp }}"
+    shiori_db_local_path_runtime: "{{ shiori_backup_workdir }}/staging-{{ shiori_backup_timestamp }}/{{ shiori_db_filename }}"
+    shiori_archive_local_path_runtime: "{{ shiori_backup_workdir }}/staging-{{ shiori_backup_timestamp }}/{{ shiori_archive_filename }}"
+
+- name: Ensure local backup directory exists
+  ansible.builtin.file:
+    path: "{{ shiori_backup_workdir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Ensure run staging directory exists
+  ansible.builtin.file:
+    path: "{{ shiori_backup_staging_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Ensure local VeraCrypt mount point exists
+  ansible.builtin.file:
+    path: "{{ veracrypt_mount_point }}"
+    state: directory
+    mode: "0700"
+  become: true
+  delegate_to: localhost
+
+- name: Check required local CLIs exist
+  ansible.builtin.shell: "command -v {{ item }}"
+  args:
+    executable: /bin/bash
+  loop:
+    - veracrypt
+    - onedrive
+  changed_when: false
+  delegate_to: localhost
+
+- name: Copy SQLite DB from Shiori LXC to local backup directory
+  ansible.builtin.command:
+    argv:
+      - scp
+      - -i
+      - "{{ shiori_lxc_ssh_key }}"
+      - -o
+      - "StrictHostKeyChecking=no"
+      - -o
+      - "UserKnownHostsFile=/dev/null"
+      - "root@{{ shiori_lxc_ip }}:/root/.local/share/shiori/shiori.db"
+      - "{{ shiori_db_local_path_runtime }}"
+  delegate_to: localhost
+  changed_when: true
+
+- name: Compress archive directory from the Shiori LXC
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -i
+      - "{{ shiori_lxc_ssh_key }}"
+      - -o
+      - "StrictHostKeyChecking=no"
+      - -o
+      - "UserKnownHostsFile=/dev/null"
+      - "root@{{ shiori_lxc_ip }}"
+      - "tar -czf {{ shiori_archive_remote_temp }} -C /root/.local/share/shiori archive thumb"
+  delegate_to: localhost
+  changed_when: true
+
+- name: Copy compressed archive from LXC to local backup directory
+  ansible.builtin.command:
+    argv:
+      - scp
+      - -i
+      - "{{ shiori_lxc_ssh_key }}"
+      - -o
+      - "StrictHostKeyChecking=no"
+      - -o
+      - "UserKnownHostsFile=/dev/null"
+      - "root@{{ shiori_lxc_ip }}:{{ shiori_archive_remote_temp }}"
+      - "{{ shiori_archive_local_path_runtime }}"
+  delegate_to: localhost
+  changed_when: true
+
+- name: Remove temporary archive from remote Shiori LXC
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -i
+      - "{{ shiori_lxc_ssh_key }}"
+      - -o
+      - "StrictHostKeyChecking=no"
+      - -o
+      - "UserKnownHostsFile=/dev/null"
+      - "root@{{ shiori_lxc_ip }}"
+      - "rm -f {{ shiori_archive_remote_temp }}"
+  delegate_to: localhost
+  changed_when: true
+
+- name: Prepare VeraCrypt role input variables
+  ansible.builtin.set_fact:
+    veracrypt_archive_container_path: "{{ veracrypt_container_path }}"
+    veracrypt_archive_password: "{{ veracrypt_password }}"
+    veracrypt_archive_mount_point: "{{ veracrypt_mount_point }}"
+    veracrypt_archive_filesystem: "{{ veracrypt_filesystem }}"
+    veracrypt_archive_encryption: "{{ veracrypt_encryption }}"
+    veracrypt_archive_hash: "{{ veracrypt_hash }}"
+    veracrypt_archive_extra_mb: "{{ shiori_backup_extra_mb | int }}"
+
+- name: Archive staged files into VeraCrypt container
+  ansible.builtin.include_role:
+    name: veracrypt_archive
+  vars:
+    input_path: "{{ shiori_backup_staging_dir }}"
+    veracrypt_container_path: "{{ veracrypt_archive_container_path }}"
+    veracrypt_password: "{{ veracrypt_archive_password }}"
+    veracrypt_mount_point: "{{ veracrypt_archive_mount_point }}"
+    veracrypt_filesystem: "{{ veracrypt_archive_filesystem }}"
+    veracrypt_encryption: "{{ veracrypt_archive_encryption }}"
+    veracrypt_hash: "{{ veracrypt_archive_hash }}"
+    veracrypt_extra_mb: "{{ veracrypt_archive_extra_mb }}"
+
+- name: Ensure OneDrive sync directory exists
+  ansible.builtin.file:
+    path: "{{ onedrive_sync_dir }}/{{ onedrive_remote_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+
+- name: Copy VeraCrypt container file into OneDrive sync tree
+  ansible.builtin.copy:
+    src: "{{ veracrypt_container_path }}"
+    dest: "{{ onedrive_sync_dir }}/{{ onedrive_remote_dir }}/{{ veracrypt_container_name }}"
+    remote_src: true
+    mode: "0600"
+  delegate_to: localhost
+
+- name: Upload VeraCrypt backup to OneDrive
+  ansible.builtin.shell: "{{ onedrive_upload_cmd }}"
+  args:
+    executable: /bin/bash
+  delegate_to: localhost
+  changed_when: true
+
+- name: Remove Shiori staging directory after upload
+  ansible.builtin.file:
+    path: "{{ shiori_backup_staging_dir }}"
+    state: absent
+  delegate_to: localhost

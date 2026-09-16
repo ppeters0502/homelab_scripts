@@ -1,0 +1,10 @@
+---
+# defaults file for roles/alpine_lxc_init
+alpine_lxc_hostname: "alpine-lxc"
+proxmox_api_host: "{{ inventory_hostname }}"
+proxmox_api_user: "root@pam"
+alpine_lxc_root_password: "{{ ansible_password }}"
+node: "proxmox"
+storage: "local-lvm"
+
+ssh_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"

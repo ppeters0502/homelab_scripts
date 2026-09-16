@@ -1,0 +1,58 @@
+---
+# tasks file for roles/openbooks_setup
+- name: Create openbooks group
+  group:
+    name: openbooks
+    system: yes
+  become: true
+
+- name: Create openbooks user
+  user:
+    name: openbooks
+    shell: /bin/ash
+    home: /opt/openbooks
+    system: yes
+  become: true
+
+- name: Download Latest OpenBooks Release
+  get_url:
+    url: "https://github.com/evan-buss/openbooks/releases/download/v4.5.0/openbooks_linux"
+    dest: /opt/openbooks/openbooks_linux
+    mode: '0755'
+  become: true
+
+- name: Change ownership of /opt/openbooks/openbooks_linux to openbooks user
+  file:
+    path: /opt/openbooks/openbooks_linux
+    owner: openbooks
+    group: openbooks
+    mode: '0755'
+  become: true
+
+- name: Create OpenRC init script for openbooks
+  copy:
+    dest: /etc/init.d/openbooks
+    mode: '0755'
+    content: |
+      #!/sbin/openrc-run
+      name="OpenBooks Server"
+      command="/opt/openbooks/openbooks_linux"
+      command_args="server --name patches"
+      command_background="yes"
+      pidfile="/var/run/openbooks.pid"
+      directory="/opt/openbooks"
+      user="openbooks"
+  become: true
+
+- name: Add openbooks service to OpenRC
+  shell: rc-update add openbooks
+  args:
+    executable: /bin/sh
+  become: true
+
+- name: Start openbooks service
+  shell: rc-service openbooks start
+  args:
+    executable: /bin/sh
+  become: true
+  

@@ -1,0 +1,133 @@
+---
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - veracrypt_password is defined
+      - veracrypt_password | length > 0
+      - input_path is defined
+      - input_path | length > 0
+      - veracrypt_container_path is defined
+      - veracrypt_container_path | length > 0
+    fail_msg: "Missing required variables: veracrypt_password, input_path, veracrypt_container_path"
+
+- name: Ensure source path exists
+  ansible.builtin.stat:
+    path: "{{ input_path }}"
+  register: input_dir_stat
+
+- name: Assert source path is a directory
+  ansible.builtin.assert:
+    that:
+      - input_dir_stat.stat.exists
+      - input_dir_stat.stat.isdir
+    fail_msg: "input_path does not exist or is not a directory: {{ input_path }}"
+
+- name: Ensure parent directory for container exists
+  ansible.builtin.file:
+    path: "{{ veracrypt_container_path | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Check required CLI exists
+  ansible.builtin.shell: "command -v veracrypt"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Calculate combined input directory size in bytes
+  ansible.builtin.shell: "du -sb \"{{ input_path }}\" | cut -f1"
+  args:
+    executable: /bin/bash
+  register: input_size_bytes_cmd
+  changed_when: false
+
+- name: Set fact for input size in bytes
+  ansible.builtin.set_fact:
+    input_size_bytes: "{{ input_size_bytes_cmd.stdout | int }}"
+
+- name: Log input directory size
+  ansible.builtin.debug:
+    msg: "Input directory size: {{ input_size_bytes }} bytes"
+
+- name: Convert payload size to MB with multiplier headroom
+  ansible.builtin.set_fact:
+    # Integer-only equivalent of ceil((bytes * numerator / denominator) / 1048576)
+    veracrypt_payload_size_mb: "{{ ((((input_size_bytes | int) * (veracrypt_size_multiplier_numerator | int)) + ((veracrypt_size_multiplier_denominator | int) * 1048576) - 1) // ((veracrypt_size_multiplier_denominator | int) * 1048576)) | int }}"
+
+- name: Apply extra padding and minimum container size
+  ansible.builtin.set_fact:
+    veracrypt_size_mb: "{{ [((veracrypt_payload_size_mb | int) + (veracrypt_extra_mb | int)), (veracrypt_min_size_mb | int)] | max }}"
+
+- name: log calculated VeraCrypt container size
+  ansible.builtin.debug:
+    msg: "Calculated VeraCrypt container size: {{ veracrypt_size_mb }} MB (payload={{ veracrypt_payload_size_mb }} MB, extra={{ veracrypt_extra_mb }} MB, min={{ veracrypt_min_size_mb }} MB)"
+
+- name: Create and populate VeraCrypt archive
+  block:
+    - name: Create VeraCrypt container
+      ansible.builtin.shell: |
+        veracrypt --text --non-interactive \
+          --create "{{ veracrypt_container_path }}" \
+          --size={{ veracrypt_size_mb }}M \
+          --encryption={{ veracrypt_encryption }} \
+          --hash={{ veracrypt_hash }} \
+          --filesystem={{ veracrypt_filesystem }} \
+          --password='{{ veracrypt_password }}' \
+          --pim=0 --keyfiles='' \
+          --random-source=/dev/urandom
+      args:
+        executable: /bin/bash
+      become: true
+      no_log: true
+      changed_when: true
+
+    - name: Ensure mount point exists
+      ansible.builtin.file:
+        path: "{{ veracrypt_mount_point }}"
+        state: directory
+        mode: "0700"
+      become: true
+
+    - name: Mount VeraCrypt container
+      ansible.builtin.shell: |
+        veracrypt --text --non-interactive \
+          "{{ veracrypt_container_path }}" "{{ veracrypt_mount_point }}" \
+          --password='{{ veracrypt_password }}' \
+          --pim=0 --keyfiles='' --protect-hidden=no
+      args:
+        executable: /bin/bash
+      become: true
+      no_log: true
+      changed_when: true
+
+    - name: Move all items into mounted container
+      ansible.builtin.shell: |
+        find "{{ input_path }}" -mindepth 1 -maxdepth 1 -exec mv -t "{{ veracrypt_mount_point }}" {} +
+      args:
+        executable: /bin/bash
+      become: true
+      changed_when: true
+
+  always:
+    - name: Unmount VeraCrypt container
+      ansible.builtin.shell: |
+        veracrypt --text --non-interactive --dismount "{{ veracrypt_mount_point }}" || true
+      args:
+        executable: /bin/bash
+      become: true
+      changed_when: false
+
+- name: Check resulting VeraCrypt container file
+  ansible.builtin.stat:
+    path: "{{ veracrypt_container_path }}"
+  register: veracrypt_container_stat
+
+- name: Ensure resulting VeraCrypt container ownership and mode
+  ansible.builtin.file:
+    path: "{{ veracrypt_container_path }}"
+    owner: "{{ veracrypt_container_owner }}"
+    group: "{{ veracrypt_container_group }}"
+    mode: "{{ veracrypt_container_mode }}"
+  become: true
+  when: veracrypt_container_stat.stat.exists

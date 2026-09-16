@@ -1,0 +1,11 @@
+[proxmox]
+proxmox1 ansible_host=IP_ADDRESS_HERE ansible_python_interpreter=PYTHON_PATH
+
+#########################################
+# LXC containers
+#########################################
+[lxc]
+ansible_host=nodejs-lxc ansible_ssh_private_key_file=KEY_PATH ansible_python_interpreter=/usr/bin/python3
+
+[docker_vm]
+docker_vm ansible_host=DOCKER_IP ansible_port=PORT python_interpreter=PYTHON_PATH

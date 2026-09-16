@@ -1,0 +1,149 @@
+---
+- name: Install Shiori runtime prerequisites
+  apk:
+    name:
+      - ca-certificates
+      - tar
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create shiori group
+  group:
+    name: "{{ shiori_group }}"
+    system: yes
+  become: true
+
+- name: Create shiori user
+  user:
+    name: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    shell: /bin/ash
+    home: "{{ shiori_home }}"
+    system: yes
+  become: true
+
+- name: Ensure Shiori install directory exists
+  file:
+    path: "{{ shiori_install_dir }}"
+    state: directory
+    owner: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    mode: "0755"
+  become: true
+
+- name: Ensure Shiori data directory exists
+  file:
+    path: "{{ shiori_data_dir }}"
+    state: directory
+    owner: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    mode: "0755"
+  become: true
+
+- name: Upload Pocket export CSV to the LXC
+  copy:
+    src: "{{ shiori_import_csv_name }}"
+    dest: "{{ shiori_import_csv_path }}"
+    owner: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    mode: "0644"
+  become: true
+
+- name: Download Shiori archive
+  get_url:
+    url: "{{ shiori_archive_url }}"
+    dest: "{{ shiori_archive_path }}"
+    mode: "0644"
+  become: true
+
+- name: Extract Shiori archive
+  unarchive:
+    src: "{{ shiori_archive_path }}"
+    dest: "{{ shiori_install_dir }}"
+    remote_src: yes
+  become: true
+  notify: Restart shiori
+
+- name: Set ownership of install directory
+  file:
+    path: "{{ shiori_install_dir }}"
+    owner: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    recurse: yes
+  become: true
+
+- name: Ensure Shiori binary is executable
+  file:
+    path: "{{ shiori_binary_path }}"
+    owner: "{{ shiori_user }}"
+    group: "{{ shiori_group }}"
+    mode: "0755"
+    state: file
+  become: true
+
+- name: Symlink Shiori binary into PATH
+  file:
+    src: "{{ shiori_binary_path }}"
+    dest: "{{ shiori_symlink_path }}"
+    state: link
+    force: true
+  become: true
+
+- name: Create OpenRC init script for Shiori
+  copy:
+    dest: "/etc/init.d/{{ shiori_service_name }}"
+    mode: "0755"
+    content: |
+      #!/sbin/openrc-run
+      name="Shiori Bookmark Manager"
+      command="{{ shiori_symlink_path }}"
+      command_args="serve --address {{ shiori_listen_address }} --port {{ shiori_port }}"
+      command_background="yes"
+      pidfile="/run/{{ shiori_service_name }}.pid"
+      directory="{{ shiori_install_dir }}"
+      command_user="{{ shiori_user }}:{{ shiori_group }}"
+      command_env="SHIORI_DIR={{ shiori_data_dir }}"
+  become: true
+  notify: Restart shiori
+
+- name: Enable Shiori service at boot
+  command: rc-update add {{ shiori_service_name }} default
+  args:
+    creates: /etc/runlevels/default/{{ shiori_service_name }}
+  become: true
+
+- name: Ensure Shiori service is enabled and started
+  service:
+    name: "{{ shiori_service_name }}"
+    state: started
+    enabled: yes
+  become: true
+
+- name: Check whether the Pocket import marker exists
+  stat:
+    path: "{{ shiori_data_dir }}/.pocket_import_done"
+  register: shiori_import_marker
+  become: true
+
+- name: Add test bookmark via shiori CLI
+  command: "{{ shiori_symlink_path }} add https://example.com"
+  environment:
+    SHIORI_DIR: "{{ shiori_data_dir }}"
+  when: not shiori_import_marker.stat.exists
+
+- name: Import Pocket bookmarks via shiori pocket command
+  command: "{{ shiori_symlink_path }} pocket {{ shiori_import_csv_path }}"
+  environment:
+    SHIORI_DIR: "{{ shiori_data_dir }}"
+  become: true
+  become_user: "{{ shiori_user }}"
+  when: not shiori_import_marker.stat.exists
+
+- name: Mark Pocket import as completed
+  file:
+    path: "{{ shiori_data_dir }}/.pocket_import_done"
+    state: touch
+    mode: "0644"
+  become: true
+  when: not shiori_import_marker.stat.exists

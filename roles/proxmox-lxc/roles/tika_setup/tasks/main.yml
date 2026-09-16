@@ -1,0 +1,81 @@
+---
+
+- name: Create tika group
+  ansible.builtin.group:
+    name: "{{ tika_group }}"
+    system: true
+  become: true
+
+- name: Create tika user
+  ansible.builtin.user:
+    name: "{{ tika_user }}"
+    group: "{{ tika_group }}"
+    shell: /bin/ash
+    home: "{{ tika_home }}"
+    system: true
+  become: true
+
+- name: Ensure tika install directory exists
+  ansible.builtin.file:
+    path: "{{ tika_install_dir }}"
+    state: directory
+    owner: "{{ tika_user }}"
+    group: "{{ tika_group }}"
+    mode: "0755"
+  become: true
+
+- name: Install Java and bootstrap tools
+  ansible.builtin.apk:
+    name:
+      - openjdk17-jre-headless
+      - curl
+      - ca-certificates
+      - unzip
+    state: present
+    update_cache: true
+  become: true
+
+- name: Create Tika service directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tika_user }}"
+    group: "{{ tika_group }}"
+    mode: "0755"
+  loop:
+    - /opt/tika
+    - /etc/tika
+  become: true
+
+- name: Download Tika server jar
+  ansible.builtin.get_url:
+    url: "https://repo1.maven.org/maven2/org/apache/tika/tika-server-standard/{{ tika_version }}/tika-server-standard-{{ tika_version }}.jar"
+    dest: "/opt/tika/tika-server.jar"
+    mode: "0644"
+  become: true
+
+- name: Install Tika init script
+  ansible.builtin.copy:
+    dest: /etc/init.d/tika
+    mode: "0755"
+    content: |
+      #!/sbin/openrc-run
+      name="tika"
+      command="/usr/bin/java"
+      command_args="-jar /opt/tika/tika-server.jar --host 0.0.0.0 --port {{ tika_port }}"
+      command_background="yes"
+      pidfile="/run/tika.pid"
+
+      depend() {
+        need net
+      }
+  become: true
+
+- name: Enable and start tika
+  ansible.builtin.shell: |
+    rc-update add tika default
+    rc-service tika restart
+  args:
+    executable: /bin/ash
+  become: true
+  changed_when: true

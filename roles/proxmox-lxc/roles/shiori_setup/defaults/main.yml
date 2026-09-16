@@ -1,0 +1,25 @@
+---
+# Shiori binary release settings
+shiori_version: "1.8.0"
+shiori_platform: "Linux"
+shiori_arch: "x86_64"
+shiori_archive_url: "https://github.com/go-shiori/shiori/releases/download/v{{ shiori_version }}/shiori_{{ shiori_platform }}_{{ shiori_arch }}_{{ shiori_version }}.tar.gz"
+shiori_archive_path: "/tmp/shiori_{{ shiori_version }}_{{ shiori_platform }}_{{ shiori_arch }}.tar.gz"
+
+# Shiori runtime settings
+shiori_user: "shiori"
+shiori_group: "shiori"
+shiori_home: "/opt/shiori"
+shiori_install_dir: "/opt/shiori"
+shiori_binary_path: "/opt/shiori/shiori"
+shiori_symlink_path: "/usr/local/bin/shiori"
+shiori_data_dir: "/var/lib/shiori"
+shiori_service_name: "shiori"
+shiori_listen_address: "0.0.0.0"
+shiori_port: 8080
+
+# Pocket export import settings
+shiori_import_csv_name: "pocket_export.csv"
+shiori_import_csv_path: "{{ shiori_data_dir }}/{{ shiori_import_csv_name }}"
+shiori_import_script_url: "https://gist.githubusercontent.com/fmartingr/88a258bfad47fb00a3ef9d6c38e5699e/raw"
+shiori_import_script_path: "{{ shiori_install_dir }}/import_pocket.sh"

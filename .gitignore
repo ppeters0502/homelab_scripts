@@ -1,0 +1,27 @@
+# Local secret material and environment files
+*.secret
+*.vault
+.vault_pass
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.crt
+*.key
+*.ovpn
+
+# Local provisioning, editor state, and generated runtime data
+.vagrant/
+.vscode/
+.idea/
+venv/
+.venv/
+**/__pycache__/
+keys/*
+
+# Ansible secrets
+group_vars/secrets.yml
+
+# Generated host/container inspection output may contain live credentials
+roles/proxmox-lxc/docker_containers_inspect.json

@@ -1,0 +1,115 @@
+---
+- name: Create and configure Node.js LXC
+  hosts: proxmox
+  gather_facts: no
+
+  vars:
+    proxmox_api_host: "{{ inventory_hostname }}"
+    proxmox_api_user: "{{ ansible_user }}@pam"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+    storage: "local-lvm"
+    vmid: 111
+    hostname: "nodejs-lxc"
+
+    ssh_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+  tasks:
+
+    - name: Ensure proxmoxer is installed
+      pip:
+        name: proxmoxer
+        state: present
+        extra_args: --break-system-packages
+
+    - name: Create LXC container
+      community.general.proxmox:
+        api_host: "{{ ansible_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_password: "{{ proxmox_api_password }}"
+        node: "{{ node }}"
+        vmid: "{{ vmid }}"
+        hostname: "{{ hostname }}"
+        ostemplate: "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+        storage: "{{ storage }}"
+        password: "TempPass123!"   # not used after SSH keys
+        cores: 2
+        memory: 2048
+        # disk: 10
+        netif: '{"net0":"name=eth0,ip=dhcp,bridge=vmbr0"}'
+        pubkey: "{{ ssh_pub_key }}"
+        unprivileged: true
+        state: present
+
+    - name: Start container
+      community.general.proxmox:
+        api_host: "{{ ansible_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_password: "{{ proxmox_api_password }}"
+        node: "proxmox"
+        vmid: "{{ vmid }}"
+        state: started
+
+    - name: Wait for container to get IP
+      shell: "pct exec {{ vmid }} -- hostname -I"
+      register: container_ip
+      retries: 10
+      delay: 5
+      until: container_ip.stdout != ""
+
+    - name: Set container IP fact
+      set_fact:
+        lxc_ip: "{{ container_ip.stdout.split()[0] }}"
+
+    - name: Add container to dynamic inventory
+      add_host:
+        name: lxc_node
+        ansible_host: "{{ lxc_ip }}"
+        ansible_user: root
+        ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+        ansible_python_interpreter: /usr/bin/python3
+
+- name: Configure Node.js inside LXC
+  hosts: lxc_node
+  gather_facts: false
+
+  tasks:
+
+    - name: Wait for SSH
+      wait_for_connection:
+        timeout: 120
+
+    - name: Install Python (bootstrap)
+      raw: |
+        apt-get update && apt-get install -y python3
+      changed_when: false
+
+    - name: Gather facts
+      setup:
+
+    - name: Install dependencies
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+        update_cache: yes
+
+    - name: Add NodeSource repo
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      args:
+        executable: /bin/bash
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Verify Node.js
+      command: node -v
+      register: node_version
+
+    - debug:
+        var: node_version.stdout

@@ -1,0 +1,6 @@
+---
+- name: Restart gotenberg
+  ansible.builtin.systemd:
+    name: gotenberg
+    state: restarted
+    daemon_reload: true
