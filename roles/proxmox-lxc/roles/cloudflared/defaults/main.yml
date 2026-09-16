@@ -1,0 +1,6 @@
+---
+cloudflared_arch: amd64
+cloudflared_version: latest
+cloudflared_bin_url: "https://github.com/cloudflare/cloudflared/releases/{{ cloudflared_version }}/download/cloudflared-linux-{{ cloudflared_arch }}"
+cloudflared_tunnel_token: ""
+cloudflared_user: cloudflared

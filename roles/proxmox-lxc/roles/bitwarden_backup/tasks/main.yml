@@ -1,0 +1,142 @@
+---
+
+- name: Validate required secrets
+  ansible.builtin.assert:
+    that:
+      - bitwarden_client_id is defined
+      - bitwarden_client_id | length > 0
+      - bitwarden_client_secret is defined
+      - bitwarden_client_secret | length > 0
+      - bitwarden_password is defined
+      - bitwarden_password | length > 0
+      - veracrypt_password is defined
+      - veracrypt_password | length > 0
+    fail_msg: "Missing one or more required secrets: bitwarden_client_id, bitwarden_client_secret, bitwarden_password, veracrypt_password"
+
+- name: Ensure backup working directory exists
+  ansible.builtin.file:
+    path: "{{ bitwarden_backup_workdir }}"
+    state: directory
+    mode: "0700"
+
+- name: Ensure VeraCrypt mount point exists
+  ansible.builtin.file:
+    path: "{{ veracrypt_mount_point }}"
+    state: directory
+    mode: "0700"
+
+- name: Check required CLIs exist
+  ansible.builtin.shell: "command -v {{ item }}"
+  args:
+    executable: /bin/bash
+  loop:
+    - bw
+    - veracrypt
+    - onedrive
+  changed_when: false
+
+- name: Generate backup timestamp
+  ansible.builtin.set_fact:
+    bitwarden_backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+- name: Derive staging paths from timestamp
+  ansible.builtin.set_fact:
+    bitwarden_staging_dir: "{{ bitwarden_backup_workdir }}/staging-{{ bitwarden_backup_timestamp }}"
+    bitwarden_export_path_runtime: "{{ bitwarden_backup_workdir }}/staging-{{ bitwarden_backup_timestamp }}/{{ bitwarden_export_filename }}"
+
+- name: Ensure per-run staging directory exists
+  ansible.builtin.file:
+    path: "{{ bitwarden_staging_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Bitwarden export and VeraCrypt packaging
+  block:
+    - name: Log in to Bitwarden with API key
+      ansible.builtin.shell: |
+        bw logout || true
+        bw login --apikey
+      args:
+        executable: /bin/bash
+      environment:
+        BW_CLIENTID: "{{ bitwarden_client_id }}"
+        BW_CLIENTSECRET: "{{ bitwarden_client_secret }}"
+      no_log: true
+      changed_when: true
+
+    - name: Unlock Bitwarden vault and capture session token
+      ansible.builtin.shell: |
+        bw unlock --raw --passwordenv BW_PASSWORD
+      args:
+        executable: /bin/bash
+      environment:
+        BW_PASSWORD: "{{ bitwarden_password }}"
+      register: bw_unlock
+      no_log: true
+      changed_when: false
+
+    - name: Sync vault before export
+      ansible.builtin.shell: |
+        bw sync --session "{{ bw_unlock.stdout }}"
+      args:
+        executable: /bin/bash
+      no_log: true
+      changed_when: false
+
+    - name: Export vault to JSON file
+      ansible.builtin.shell: |
+        bw export --format json --output "{{ bitwarden_export_path_runtime }}" --session "{{ bw_unlock.stdout }}"
+      args:
+        executable: /bin/bash
+      no_log: true
+      changed_when: true
+
+    - name: Prepare VeraCrypt role input variables
+      ansible.builtin.set_fact:
+        veracrypt_archive_container_path: "{{ veracrypt_container_path }}"
+        veracrypt_archive_password: "{{ veracrypt_password }}"
+        veracrypt_archive_mount_point: "{{ veracrypt_mount_point }}"
+        veracrypt_archive_filesystem: "{{ veracrypt_filesystem }}"
+        veracrypt_archive_encryption: "{{ veracrypt_encryption }}"
+        veracrypt_archive_hash: "{{ veracrypt_hash }}"
+        veracrypt_archive_extra_mb: "{{ bitwarden_backup_extra_mb | int }}"
+
+    - name: Archive staged export into VeraCrypt container
+      ansible.builtin.include_role:
+        name: veracrypt_archive
+      vars:
+        input_path: "{{ bitwarden_staging_dir }}"
+        veracrypt_container_path: "{{ veracrypt_archive_container_path }}"
+        veracrypt_password: "{{ veracrypt_archive_password }}"
+        veracrypt_mount_point: "{{ veracrypt_archive_mount_point }}"
+        veracrypt_filesystem: "{{ veracrypt_archive_filesystem }}"
+        veracrypt_encryption: "{{ veracrypt_archive_encryption }}"
+        veracrypt_hash: "{{ veracrypt_archive_hash }}"
+        veracrypt_extra_mb: "{{ veracrypt_archive_extra_mb }}"
+
+  always:
+    - name: Bitwarden logout
+      ansible.builtin.shell: bw logout || true
+      args:
+        executable: /bin/bash
+      no_log: true
+      changed_when: false
+
+- name: Copy container into OneDrive sync tree
+  ansible.builtin.copy:
+    src: "{{ veracrypt_container_path }}"
+    dest: "{{ onedrive_sync_dir }}/{{ onedrive_remote_dir }}/{{ veracrypt_container_name }}"
+    remote_src: true
+    mode: "0600"
+
+- name: Upload to OneDrive
+  ansible.builtin.shell: "{{ onedrive_upload_cmd }}"
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Remove Bitwarden staging directory after upload
+  ansible.builtin.file:
+    path: "{{ bitwarden_staging_dir }}"
+    state: absent
+

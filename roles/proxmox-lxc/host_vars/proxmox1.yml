@@ -1,0 +1,4 @@
+# Store connection secrets in Ansible Vault and reference them here.
+# Example:
+ansible_user: "{{ vault_proxmox_user }}"
+ansible_password: "{{ vault_proxmox_password }}"

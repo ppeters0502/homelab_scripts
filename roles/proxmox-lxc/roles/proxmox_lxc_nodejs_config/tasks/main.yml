@@ -1,0 +1,38 @@
+---
+# tasks file for roles/proxmox_lxc_nodejs_config
+
+  - name: print out dynamic inventory
+    debug:
+      var: groups['dynamic_lxc']
+      
+  - name: Install Python (bootstrap)
+    raw: |
+      apt-get update && apt-get install -y python3
+    changed_when: false
+
+  - name: Install dependencies
+    apt:
+      name:
+        - curl
+        - ca-certificates
+        - gnupg
+      state: present
+      update_cache: yes
+
+  - name: Add NodeSource repo
+    shell: |
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    args:
+      executable: /bin/bash
+
+  - name: Install Node.js
+    apt:
+      name: nodejs
+      state: present
+
+  - name: Verify Node.js
+    command: node -v
+    register: node_version
+
+  - debug:
+      var: node_version.stdout

@@ -1,0 +1,115 @@
+---
+- name: Install dependencies (Alpine)
+  apk:
+    name:
+      - nodejs
+      - npm
+      - git
+    update_cache: yes
+  become: true
+
+- name: Create homer group
+  group:
+    name: homer
+    system: yes
+  become: true
+
+- name: Create homer user
+  user:
+    name: homer
+    shell: /bin/ash
+    home: /opt/homer
+    system: yes
+  become: true
+
+- name: Download Homer release zip
+  get_url:
+    url: https://github.com/bastienwirtz/homer/releases/download/v25.11.1/homer.zip
+    dest: /opt/homer/homer.zip
+    mode: '0644'
+  become: true
+
+- name: Change ownership of /opt/homer/homer.zip to homer user
+  file:
+    path: /opt/homer/homer.zip
+    owner: homer
+    group: homer
+    mode: '0644'
+  become: true
+
+- name: Unzip Homer release
+  unarchive:
+    src: /opt/homer/homer.zip
+    dest: /opt/homer
+    remote_src: yes
+  become: true
+
+- name: Copy custom config.yml
+  copy:
+    src: config.yml
+    dest: /opt/homer/assets/config.yml
+    owner: homer
+    mode: '0644'
+  become: true
+
+- name: Copy custom book icon
+  copy:
+    src: Leanpub--Streamline-Simple-Icons.png
+    dest: /opt/homer/assets/tools/Leanpub--Streamline-Simple-Icons.png
+    owner: homer
+    mode: '0644'
+  become: true
+
+- name: Copy custom bookmark icon
+  copy:
+    src: Brand-Pocket--Streamline-Tabler.png
+    dest: /opt/homer/assets/tools/Brand-Pocket--Streamline-Tabler.png
+    owner: homer
+    mode: '0644'
+  become: true
+
+- name: Copy custom immich icon
+  copy:
+    src: Immich--Streamline-Simple-Icons.png
+    dest: /opt/homer/assets/tools/Immich--Streamline-Simple-Icons.png
+    owner: homer
+    mode: '0644'
+  become: true
+
+- name: Copy custom Bitwarden icon
+  copy:
+    src: Bitwarden--Streamline-Simple-Icons.png
+    dest: /opt/homer/assets/tools/Bitwarden--Streamline-Simple-Icons.png
+    owner: homer
+    mode: '0644'
+  become: true
+
+- name: Create init script for Python HTTP server
+  copy:
+    dest: /etc/init.d/homer-python-http
+    mode: '0755'
+    owner: homer
+    group: homer
+    content: |
+      #!/sbin/openrc-run
+      name="Homer Python HTTP Server"
+      command="/usr/bin/python"
+      command_args="-m http.server 8080 --bind 0.0.0.0"
+      command_background="yes"
+      pidfile="/var/run/homer-python-http.pid"
+      directory="/opt/homer"
+      user="homer"
+  become: true
+
+- name: Add service to OpenRC
+  shell: rc-update add homer-python-http
+  args:
+    executable: /bin/sh
+  become: true
+
+- name: Start Homer Python HTTP service
+  shell: rc-service homer-python-http start
+  args:
+    executable: /bin/sh
+  become: true
+

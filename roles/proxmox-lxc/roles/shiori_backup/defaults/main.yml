@@ -1,0 +1,45 @@
+---
+# defaults file for roles/shiori_backup
+
+shiori_backup_vmid: ""
+
+shiori_backup_binary_path: "/opt/shiori/shiori"
+shiori_backup_data_dir: "/var/lib/shiori"
+shiori_backup_total_bytes: 0
+
+shiori_export_filename: "shiori-export.html"
+shiori_export_remote_dir: "/tmp"
+shiori_export_remote_path: "{{ shiori_export_remote_dir }}/{{ shiori_export_filename }}"
+
+proxmox_stage_dir: "/tmp/shiori-backup"
+proxmox_stage_export_path: "{{ proxmox_stage_dir }}/{{ shiori_export_filename }}"
+
+shiori_backup_workdir: "{{ lookup('env', 'HOME') }}/backups/shiori"
+shiori_backup_local_export_path: "{{ shiori_backup_workdir }}/{{ shiori_export_filename }}"
+shiori_backup_extra_mb: 10
+shiori_backup_timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+veracrypt_container_basename: "shiori-backup"
+veracrypt_container_path: ""
+veracrypt_mount_point: "/mnt/shiori_vc"
+veracrypt_filesystem: "ext4"
+veracrypt_encryption: "AES"
+veracrypt_hash: "SHA-512"
+veracrypt_size_mb: 0
+
+onedrive_sync_dir: "{{ lookup('env', 'HOME') }}/OneDrive"
+onedrive_remote_dir: "backups/shiori"
+onedrive_upload_cmd: "onedrive --sync --upload-only --single-directory {{ onedrive_remote_dir }}"
+
+# Target Shiori LXC
+shiori_lxc_ip: ""
+shiori_lxc_ssh_key: ""
+shiori_lxc_user: "root"
+
+# Local backup destination
+shiori_db_filename: "shiori.db"
+shiori_db_local_path: "{{ shiori_backup_workdir }}/{{ shiori_db_filename }}"
+shiori_archive_filename: "shiori-archive.tar.gz"
+shiori_archive_local_path: "{{ shiori_backup_workdir }}/{{ shiori_archive_filename }}"
+shiori_archive_remote_temp: "/tmp/shiori-archive.tar.gz"
+

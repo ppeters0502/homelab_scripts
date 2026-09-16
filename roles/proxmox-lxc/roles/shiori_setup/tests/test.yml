@@ -1,0 +1,5 @@
+---
+- hosts: dynamic_lxc
+  gather_facts: false
+  roles:
+    - ../../shiori_setup

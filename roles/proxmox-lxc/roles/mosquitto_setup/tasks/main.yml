@@ -1,0 +1,105 @@
+---
+# tasks file for roles/mosquitto_setup
+- name: Create mosquitto group
+  group:
+    name: mosquitto
+    system: yes
+  become: true
+
+- name: Create mosquitto user
+  user:
+    name: mosquitto
+    shell: /bin/ash
+    home: /opt/mosquitto
+    system: yes
+  become: true
+
+- name: Install Mosquitto, certbot, and utilities
+  apk:
+    name:
+      - mosquitto
+      - mosquitto-clients
+      - certbot
+      - openssl
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Create Mosquitto password file
+  command: mosquitto_passwd -b -c /etc/mosquitto/passwd "{{ mosquitto_user }}" "{{ mosquitto_password }}"
+  args:
+    creates: /etc/mosquitto/passwd
+
+- name: Set ownership of mosquitto password file
+  file:
+    path: /etc/mosquitto/passwd
+    owner: mosquitto
+    group: mosquitto
+    mode: '0640'
+
+- name: Obtain Let's Encrypt certificate
+  command: >
+    certbot certonly --standalone --non-interactive --agree-tos
+    --email {{ letsencrypt_email }}
+    -d {{ mosquitto_domain }}
+  args:
+    creates: "/etc/letsencrypt/live/{{ mosquitto_domain }}/fullchain.pem"
+  become: true
+
+- name: Create Mosquitto certs directory
+  file:
+    path: /etc/mosquitto/certs
+    state: directory
+    owner: mosquitto
+    group: mosquitto
+    mode: '0750'
+  become: true
+
+- name: Copy Let's Encrypt cert and key for Mosquitto
+  copy:
+    src: "/etc/letsencrypt/live/{{ mosquitto_domain }}/fullchain.pem"
+    dest: /etc/mosquitto/certs/server.crt
+    owner: mosquitto
+    group: mosquitto
+    mode: '0640'
+    remote_src: yes
+  become: true
+
+- name: Copy Let's Encrypt private key for Mosquitto
+  copy:
+    src: "/etc/letsencrypt/live/{{ mosquitto_domain }}/privkey.pem"
+    dest: /etc/mosquitto/certs/server.key
+    owner: mosquitto
+    group: mosquitto
+    mode: '0640'
+    remote_src: yes
+  become: true
+
+- name: Deploy Mosquitto configuration
+  template:
+    src: mosquitto.conf.j2
+    dest: /etc/mosquitto/mosquitto.conf
+    owner: mosquitto
+    group: mosquitto
+    mode: '0644'
+  notify: Restart Mosquitto
+
+- name: Ensure mosquitto runs as mosquitto user in OpenRC
+  lineinfile:
+    path: /etc/init.d/mosquitto
+    regexp: '^command_user='
+    line: 'command_user="mosquitto:mosquitto"'
+    insertafter: '^command='
+  become: true
+
+- name: Enable mosquitto service at boot
+  command: rc-update add mosquitto default
+  args:
+    creates: /etc/runlevels/default/mosquitto
+  become: true
+
+- name: Ensure Mosquitto is enabled and started
+  service:
+    name: mosquitto
+    state: started
+    enabled: yes

@@ -1,0 +1,6 @@
+---
+gotenberg_user: gotenberg
+gotenberg_group: gotenberg
+gotenberg_home: /opt/gotenberg
+gotenberg_port: 3000
+gotenberg_image: gotenberg/gotenberg:8

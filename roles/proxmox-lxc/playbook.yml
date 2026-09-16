@@ -1,0 +1,278 @@
+---
+- name: Create LXC container
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    proxmox_api_password: "{{ ansible_password }}"
+  roles:
+    - proxmox_lxc_nodejs
+    
+
+- name: Configure LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  roles:
+    - proxmox_lxc_nodejs_config
+
+- name: Create LXC Container for OpenBooks
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "openbooks"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Deploy OpenBooks in LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  roles:
+    - role: openbooks_setup
+
+- name: Create LXC Container for Homer
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "homer"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Deploy Homer in LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  roles:
+    - role: homer_setup
+
+
+- name: Create LXC Container for Mosquitto
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "mosquitto"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Install and configure Mosquitto MQTT broker
+  hosts: dynamic_lxc
+  become: true
+  vars:
+    mosquitto_user: "{{ vault_mosquitto_user }}"
+    mosquitto_password: "{{ vault_mosquitto_password }}"
+    mosquitto_domain: "mosquitto.skywisdom.club"
+    letsencrypt_email: "pspeters93@gmail.com"
+  roles:
+    - mosquitto_setup
+
+
+- name: Create LXC Container for Cloudflared
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "cloudflared"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Install and configure cloudflared tunnel
+  hosts: dynamic_lxc
+  gather_facts: false
+  become: true
+  vars_files:
+    - group_vars/secrets.yml
+  vars:
+    cloudflared_tunnel_token: "{{ vault_cloudflared_tunnel_token }}"
+  roles:
+    - cloudflared
+
+
+- name: Create LXC Container for Shiori
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "shiori"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Deploy Shiori in LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  become: true
+  vars:
+    shiori_port: 8080
+  roles:
+    - shiori_setup
+
+
+- name: Backup Bitwarden into VeraCrypt and upload to OneDrive
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - group_vars/secrets.yml
+  roles:
+    - bitwarden_backup
+
+
+- name: Deploy Homer in LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  roles:
+    - role: homer_setup
+
+- name: Backup Shiori bookmarks
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - group_vars/secrets.yml
+  vars:
+    shiori_lxc_ip: "192.168.100.108"
+    shiori_lxc_ssh_key: "/home/pat/.ssh/id_rsa"
+  roles:
+    - shiori_backup
+
+- name: Create LXC Container for Tika
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    alpine_lxc_hostname: "tika"
+    proxmox_api_password: "{{ ansible_password }}"
+    node: "proxmox"
+  roles:
+    - alpine_lxc_init
+
+- name: Deploy Tika in LXC container
+  hosts: dynamic_lxc
+  gather_facts: false
+  become: true
+  vars:
+    tika_port: 9998
+  roles:
+    - tika_setup
+  post_tasks:
+    - name: Save Tika IP for later use
+      ansible.builtin.set_fact:
+        tika_ip: "{{ ansible_host }}"
+        cacheable: true
+
+- name: Provision Ubuntu LXC for Gotenberg
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    proxmox_api_password: "{{ ansible_password }}"
+    ubuntu_lxc_hostname: "gotenberg"
+    ubuntu_lxc_dynamic_group: "gotenberg_lxc"
+    ubuntu_lxc_disk: "20"
+    ubuntu_lxc_cores: 2
+    ubuntu_lxc_memory: 2048
+    ubuntu_lxc_swap: 512
+    ubuntu_lxc_features: "nesting=1,keyctl=1"
+    ubuntu_lxc_apparmor_profile: "unconfined"
+    ubuntu_lxc_unprivileged: false
+    node: "proxmox"
+  roles:
+    - proxmox_ubuntu
+
+- name: Deploy Gotenberg in LXC container
+  hosts: gotenberg_lxc
+  gather_facts: true
+  become: true
+  roles:
+    - gotenberg_setup
+  post_tasks:
+    - name: Save Gotenberg IP for later use
+      ansible.builtin.set_fact:
+        gotenberg_ip: "{{ ansible_host }}"
+        cacheable: true
+
+- name: Provision Paperless Ubuntu LXC
+  hosts: proxmox
+  gather_facts: false
+  vars:
+    proxmox_api_password: "{{ ansible_password }}"
+    ubuntu_lxc_hostname: "paperless"
+    ubuntu_lxc_dynamic_group: "paperless_lxc"
+    node: "proxmox"
+  roles:
+    - proxmox_ubuntu
+
+- name: Deploy Paperless NGX into the new LXC
+  hosts: paperless_lxc
+  gather_facts: true
+  become: true
+  vars:
+    paperless_ngx_conf_account_allow_signups: true
+    paperless_ngx_conf_account_default_groups: "None"
+    paperless_ngx_conf_account_default_http_protocol: "https"
+    paperless_ngx_conf_account_email_unknown_accounts: true
+    paperless_ngx_conf_account_email_verification: "optional"
+    paperless_ngx_conf_account_session_remember: false
+    paperless_ngx_conf_admin_mail: "pat@screamintothevoid.today"
+    paperless_ngx_conf_admin_user: "pat"
+    paperless_ngx_db_type: "sqlite"
+    paperless_ngx_dependency_install_tmp_dir: "/tmp/"
+    paperless_ngx_dir_force_permission_exclude: []
+    paperless_ngx_dir_installation: "/opt/paperless-ngx"
+    paperless_ngx_dir_python: "/opt/python/{{ paperless_ngx_python_version_short }}"
+    paperless_ngx_dir_runtime_data: "/var/lib/paperless-ngx"
+    paperless_ngx_dir_virtualenv: "{{ paperless_ngx_dir_installation }}/.venv"
+    paperless_ngx_conf_enable_update_check: true
+    paperless_ngx_conf_consumer_recursive: true
+    paperless_ngx_conf_consumer_ignore_patterns: []
+    paperless_ngx_conf_consumption_dir: "/var/lib/paperless-ngx/consumption"
+    paperless_ngx_conf_consumer_polling: 5
+    paperless_ngx_conf_consumer_polling_delay: 5
+    paperless_ngx_conf_consumer_subdirs_as_tags: true
+    paperless_ngx_conf_app_title: "Pat's Paperless Docs"
+    paperless_ngx_conf_ocr_mode: auto
+    paperless_ngx_conf_archive_file_generation: never
+    paperless_ngx_conf_tika_enabled: true
+    paperless_ngx_conf_tika_endpoint: "http://{{ hostvars['tika'].tika_ip }}:9998"
+    paperless_ngx_conf_tika_gotenberg_endpoint: "http://{{ hostvars['gotenberg'].gotenberg_ip }}:3000"
+    paperless_ngx_jbig2enc_enabled: true
+    paperless_ngx_jbig2enc_lossy: false
+    paperless_ngx_jbig2enc_version: "0.29"
+    paperless_ngx_redis_host: "localhost"
+    paperless_ngx_redis_port: 6379
+    paperless_ngx_system_group: "paperlessngx"
+    paperless_ngx_system_user: "paperlessngx"
+    paperless_ngx_system_user_additional_groups: []
+    paperless_ngx_version: "latest"
+  roles:
+    - role: paperless_ngx.paperless_ngx
+
+  post_tasks:
+    - name: Force Paperless consumer polling interval
+      ansible.builtin.lineinfile:
+        path: /etc/paperless.conf
+        regexp: '^#?PAPERLESS_CONSUMER_POLLING_INTERVAL='
+        line: 'PAPERLESS_CONSUMER_POLLING_INTERVAL=5'
+
+    - name: Force Paperless consumer stability delay
+      ansible.builtin.lineinfile:
+        path: /etc/paperless.conf
+        regexp: '^#?PAPERLESS_CONSUMER_STABILITY_DELAY='
+        line: 'PAPERLESS_CONSUMER_STABILITY_DELAY=5'
+
+    - name: Restart paperless consumer
+      ansible.builtin.systemd:
+        name: paperless-consumer.service
+        state: restarted
+
+- name: Configure Samba drop share for Paperless
+  hosts: paperless_lxc
+  gather_facts: true
+  become: true
+  vars_files:
+    - group_vars/secrets.yml
+  vars:
+    paperless_samba_password: "{{ vault_paperless_samba_password }}"
+    paperless_samba_path: "/var/lib/paperless-ngx/consumption"
+  roles:
+  - paperless_samba

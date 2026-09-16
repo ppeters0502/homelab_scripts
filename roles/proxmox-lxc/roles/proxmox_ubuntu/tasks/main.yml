@@ -1,0 +1,101 @@
+---
+- name: Create Ubuntu LXC container
+  community.general.proxmox:
+    api_host: "{{ ansible_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_password: "{{ proxmox_api_password }}"
+    node: "{{ node }}"
+    hostname: "{{ ubuntu_lxc_hostname }}"
+    ostemplate: "{{ ubuntu_lxc_template }}"
+    password: "{{ ubuntu_lxc_root_password }}"
+    pubkey: "{{ ssh_pub_key }}"
+    cores: "{{ ubuntu_lxc_cores }}"
+    memory: "{{ ubuntu_lxc_memory }}"
+    swap: "{{ ubuntu_lxc_swap }}"
+    netif: "{{ ubuntu_lxc_netif }}"
+    unprivileged: "{{ ubuntu_lxc_unprivileged }}"
+    state: present
+    disk: "{{ storage }}:{{ ubuntu_lxc_disk }}"
+  register: create_results
+
+- name: Set VMID
+  ansible.builtin.set_fact:
+    vmid: "{{ create_results.vmid }}"
+
+- name: Show optional LXC vars
+  ansible.builtin.debug:
+    msg:
+      - "hostname={{ ubuntu_lxc_hostname }}"
+      - "features={{ ubuntu_lxc_features | default('UNSET') }}"
+      - "apparmor={{ ubuntu_lxc_apparmor_profile | default('UNSET') }}"
+
+# Optional configuration for LXC features and AppArmor profile. Needed for Gotenberg container.
+- name: Configure optional LXC features
+  ansible.builtin.command:
+    cmd: "pct set {{ vmid }} -features {{ ubuntu_lxc_features }}"
+  when: ubuntu_lxc_features | length > 0
+  changed_when: true
+
+# Optional configuration for LXC features and AppArmor profile. Needed for Gotenberg container.
+- name: Configure optional LXC AppArmor profile
+  ansible.builtin.lineinfile:
+    path: "/etc/pve/lxc/{{ vmid }}.conf"
+    regexp: '^lxc\.apparmor\.profile:'
+    line: "lxc.apparmor.profile: {{ ubuntu_lxc_apparmor_profile }}"
+    insertafter: EOF
+  when: ubuntu_lxc_apparmor_profile | length > 0
+
+- name: Start container
+  community.general.proxmox:
+    api_host: "{{ ansible_host }}"
+    api_user: "{{ proxmox_api_user }}"
+    api_password: "{{ proxmox_api_password }}"
+    node: "{{ node }}"
+    vmid: "{{ vmid }}"
+    state: started
+
+- name: Wait for container IP
+  ansible.builtin.shell: "pct exec {{ vmid }} -- hostname -I | awk '{print $1}'"
+  register: container_ip
+  changed_when: false
+  retries: 20
+  delay: 5
+  until: container_ip.stdout | trim | length > 0
+
+- name: Set container IP fact
+  ansible.builtin.set_fact:
+    lxc_ip: "{{ container_ip.stdout | trim }}"
+
+- name: Bootstrap SSH and Python in container
+  ansible.builtin.shell: |
+    pct exec {{ vmid }} -- bash -lc "apt-get update && apt-get install -y openssh-server python3 sudo"
+  changed_when: true
+
+- name: Ensure SSH service is enabled and started
+  ansible.builtin.shell: |
+    pct exec {{ vmid }} -- systemctl enable --now ssh
+  changed_when: true
+
+- name: Wait for SSH
+  ansible.builtin.wait_for:
+    host: "{{ lxc_ip }}"
+    port: 22
+    delay: 5
+    timeout: 120
+  delegate_to: localhost
+
+- name: Add SSH host key
+  ansible.builtin.shell: |
+    ssh-keyscan -H {{ lxc_ip }} >> ~/.ssh/known_hosts
+  delegate_to: localhost
+  changed_when: true
+
+- name: Add new LXC host to inventory
+  ansible.builtin.add_host:
+    name: "{{ ubuntu_lxc_hostname }}"
+    groups: "{{ ubuntu_lxc_dynamic_group }}"
+    ansible_host: "{{ lxc_ip }}"
+    ansible_user: root
+    ansible_ssh_private_key_file: "~/.ssh/id_rsa"
+    ansible_python_interpreter: "{{ ubuntu_lxc_python_interpreter }}"
+    vmid: "{{ vmid }}"

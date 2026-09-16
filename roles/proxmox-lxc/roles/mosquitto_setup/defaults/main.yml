@@ -1,0 +1,5 @@
+---
+mosquitto_user: "{{ vault_mosquitto_user }}"
+mosquitto_password: "{{ vault_mosquitto_password }}"
+mosquitto_domain: "mqtt.example.com"
+letsencrypt_email: "example@email.com"

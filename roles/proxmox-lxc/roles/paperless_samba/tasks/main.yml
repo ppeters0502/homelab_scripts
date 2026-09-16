@@ -1,0 +1,116 @@
+---
+- name: Validate required Samba inputs
+  ansible.builtin.assert:
+    that:
+      - paperless_samba_user | length > 0
+      - paperless_samba_group | length > 0
+      - paperless_samba_path | length > 0
+      - paperless_samba_password | length > 0
+    fail_msg: "Set paperless_samba_user, paperless_samba_group, paperless_samba_path, and paperless_samba_password."
+
+- name: Install Samba and ACL dependencies
+  ansible.builtin.apt:
+    name:
+      - samba
+      - acl
+    state: present
+    update_cache: true
+
+- name: Ensure Samba group exists
+  ansible.builtin.group:
+    name: "{{ paperless_samba_group }}"
+    state: present
+
+- name: Ensure Samba Unix user exists
+  ansible.builtin.user:
+    name: "{{ paperless_samba_user }}"
+    group: "{{ paperless_samba_group }}"
+    groups: "{{ paperless_samba_group }}"
+    append: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+
+- name: Ensure Paperless consumption share path exists
+  ansible.builtin.file:
+    path: "{{ paperless_samba_path }}"
+    state: directory
+    owner: "{{ paperless_samba_owner }}"
+    group: "{{ paperless_samba_group }}"
+    mode: "{{ paperless_samba_directory_mask }}"
+
+- name: Ensure default ACL allows group write on new files
+  ansible.posix.acl:
+    path: "{{ paperless_samba_path }}"
+    entity: "{{ paperless_samba_group }}"
+    etype: group
+    permissions: rwx
+    default: true
+    state: present
+
+- name: Check whether Samba account already exists
+  ansible.builtin.command:
+    cmd: "pdbedit -L -u {{ paperless_samba_user }}"
+  register: paperless_samba_user_check
+  changed_when: false
+  failed_when: false
+
+- name: Create Samba password entry for user
+  ansible.builtin.shell: |
+    set -o pipefail
+    printf '%s\n%s\n' "{{ paperless_samba_password }}" "{{ paperless_samba_password }}" | smbpasswd -s -a "{{ paperless_samba_user }}"
+  args:
+    executable: /bin/bash
+  when: paperless_samba_user_check.rc != 0
+  no_log: true
+  changed_when: true
+
+- name: Configure Paperless Samba share in smb.conf
+  ansible.builtin.blockinfile:
+    path: "/etc/samba/smb.conf"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK paperless_samba"
+    block: |
+      [{{ paperless_samba_share_name }}]
+        comment = {{ paperless_samba_comment }}
+        path = {{ paperless_samba_path }}
+        browseable = yes
+        read only = no
+        guest ok = no
+        valid users = {{ paperless_samba_user }}
+        force group = {{ paperless_samba_group }}
+        create mask = {{ paperless_samba_create_mask }}
+        directory mask = {{ paperless_samba_directory_mask }}
+        inherit permissions = yes
+        inherit acls = yes
+        map acl inherit = yes
+        veto files = /._*/.DS_Store/
+  notify: Restart smbd
+
+- name: Apply optional hosts allow setting
+  ansible.builtin.lineinfile:
+    path: "/etc/samba/smb.conf"
+    regexp: "^\\s*hosts allow\\s*="
+    line: "   hosts allow = {{ paperless_samba_hosts_allow }}"
+    insertafter: "^\\[{{ paperless_samba_share_name }}\\]"
+  when: paperless_samba_hosts_allow | length > 0
+  notify: Restart smbd
+
+- name: Apply optional hosts deny setting
+  ansible.builtin.lineinfile:
+    path: "/etc/samba/smb.conf"
+    regexp: "^\\s*hosts deny\\s*="
+    line: "   hosts deny = {{ paperless_samba_hosts_deny }}"
+    insertafter: "^\\[{{ paperless_samba_share_name }}\\]"
+  when: paperless_samba_hosts_deny | length > 0
+  notify: Restart smbd
+
+- name: Validate Samba configuration
+  ansible.builtin.command:
+    cmd: testparm -s
+  changed_when: false
+
+- name: Ensure smbd is enabled and running
+  ansible.builtin.systemd:
+    name: smbd
+    enabled: true
+    state: started

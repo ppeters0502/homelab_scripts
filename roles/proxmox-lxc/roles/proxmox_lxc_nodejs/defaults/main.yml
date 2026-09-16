@@ -1,0 +1,15 @@
+---
+# defaults file for roles/proxmox_lxc_nodejs
+proxmox_api_host: "{{ inventory_hostname }}"
+proxmox_api_user: "root@pam"
+proxmox_api_password: "{{ ansible_password }}"
+lxc_root_password: "{{ lookup('env', 'PROXMOX_LXC_ROOT_PASSWORD', default='') }}"
+node: "proxmox"
+storage: "local-lvm"
+vmid: 112
+
+cores: 2
+memory: 2048
+disk: 10
+
+ssh_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"

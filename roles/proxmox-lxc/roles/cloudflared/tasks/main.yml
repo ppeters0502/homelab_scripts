@@ -1,0 +1,94 @@
+---
+# tasks file for roles/cloudflared
+
+- name: Validate required variables
+  assert:
+    that:
+      - cloudflared_tunnel_token | length > 0
+    fail_msg: "Set cloudflared_tunnel_token (preferably via Ansible Vault)."
+
+- name: Create cloudflared group
+  group:
+    name: "{{ cloudflared_user }}"
+    system: yes
+  become: true
+
+- name: Create cloudflared user
+  user:
+    name: "{{ cloudflared_user }}"
+    system: yes
+    shell: /bin/ash
+    home: /opt/cloudflared
+  become: true
+
+- name: Create cloudflared config directory
+  file:
+    path: /opt/cloudflared
+    state: directory
+    owner: cloudflared
+    group: cloudflared
+    mode: "0755"
+  become: true
+
+- name: Download cloudflared binary
+  get_url:
+    url: "{{ cloudflared_bin_url }}"
+    dest: /usr/local/bin/cloudflared
+    mode: "0755"
+  become: true
+
+- name: Change ownership of cloudflared binary to cloudflared user
+  file:
+    path: /usr/local/bin/cloudflared
+    owner: cloudflared
+    group: cloudflared
+    mode: '0755'
+  become: true
+
+- name: Store tunnel token securely
+  copy:
+    dest: /opt/cloudflared/token
+    content: "{{ cloudflared_tunnel_token }}\n"
+    owner: cloudflared
+    group: cloudflared
+    mode: "0600"
+  become: true
+
+- name: Create OpenRC init script
+  copy:
+    dest: /etc/init.d/cloudflared
+    mode: "0755"
+    content: |
+      #!/sbin/openrc-run
+      name="cloudflared tunnel"
+      command="/usr/local/bin/cloudflared"
+      command_args="tunnel --no-autoupdate run --token $(cat /opt/cloudflared/token)"
+      command_background="yes"
+      pidfile="/run/${RC_SVCNAME}.pid"
+      command_user="{{ cloudflared_user }}"
+      output_log="/var/log/cloudflared.log"
+      error_log="/var/log/cloudflared.log"
+  become: true
+
+- name: Ensure cloudflared log file exists and is writable
+  file:
+    path: /var/log/cloudflared.log
+    state: touch
+    owner: "{{ cloudflared_user }}"
+    group: "{{ cloudflared_user }}"
+    mode: "0644"
+  become: true
+
+- name: Enable cloudflared service at boot
+  command: rc-update add cloudflared default
+  args:
+    creates: /etc/runlevels/default/cloudflared
+  notify: Restart cloudflared
+  become: true
+
+- name: Start cloudflared service
+  service:
+    name: cloudflared
+    state: started
+    enabled: yes
+  become: true

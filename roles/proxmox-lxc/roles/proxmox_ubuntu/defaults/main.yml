@@ -1,0 +1,25 @@
+---
+# defaults file for roles/proxmox_ubuntu
+
+ubuntu_lxc_hostname: "ubuntu"
+ubuntu_lxc_template: "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+ubuntu_lxc_root_password: "{{ ansible_password }}"
+proxmox_api_user: "{{ ansible_user }}@pam"
+node: "proxmox"
+storage: "local-lvm"
+
+ubuntu_lxc_cores: 2
+ubuntu_lxc_memory: 4096
+ubuntu_lxc_swap: 1024
+ubuntu_lxc_disk: "64"
+ubuntu_lxc_bridge: "vmbr0"
+ubuntu_lxc_netif: '{"net0":"name=eth0,ip=dhcp,bridge=vmbr0"}'
+ubuntu_lxc_unprivileged: true
+
+ssh_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+ubuntu_lxc_dynamic_group: "ubuntu_lxc"
+ubuntu_lxc_python_interpreter: "/usr/bin/python3"
+
+# Optional features needed for gotenburg container
+ubuntu_lxc_features: ""
+ubuntu_lxc_apparmor_profile: ""
