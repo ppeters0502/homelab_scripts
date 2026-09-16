@@ -19,7 +19,6 @@ venv/
 .venv/
 **/__pycache__/
 keys/*
-!keys/*.pub
 
 # Ansible secrets
 group_vars/secrets.yml
